@@ -1,47 +1,41 @@
 /**
  * script.js – Mangalam HDPE Pipes
- * Handles: hamburger menu toggle + products dropdown
+ * ─────────────────────────────────────────────────────────────────
+ * Sections (in order):
+ *  1.  Navbar          — hamburger, dropdown, mobile-menu
+ *  2.  Gallery         — prev/next arrows, thumbnails, touch swipe
+ *  3.  Gallery Zoom    — lens + zoomed preview on hover (desktop)
+ *  4.  Sticky Header   — appears past first fold, hides on scroll up
+ *                        syncs product thumbnail with active slide
+ *  5.  FAQ Accordion   — open/close with chevron animation
+ *  6.  Applications    — drag/swipe + prev/next carousel
+ *  7.  Process Tabs    — desktop tab switcher + mobile prev/next badge
+ *  8.  Process Images  — mini carousel inside each process panel
+ *  9.  Testimonials    — auto-scroll infinite loop, drag to scrub
+ *  10. Modals          — open/close, Escape key, backdrop click
+ * ─────────────────────────────────────────────────────────────────
  */
 
+/* =============================================================
+   1. NAVBAR
+   Hamburger toggle, products dropdown, close-on-outside-click
+============================================================= */
 (function () {
   "use strict";
 
-  /* --- Hamburger / mobile menu toggle --- */
-  const hamburger = document.getElementById("hamburger");
-  const mobileNav = document.getElementById("mobileNav");
+  var hamburger = document.getElementById("hamburger");
+  var mobileNav = document.getElementById("mobileNav");
 
+  /* Hamburger toggle */
   if (hamburger && mobileNav) {
     hamburger.addEventListener("click", function () {
-      const isOpen = mobileNav.classList.toggle("is-open");
+      var isOpen = mobileNav.classList.toggle("is-open");
       hamburger.classList.toggle("is-open", isOpen);
       hamburger.setAttribute("aria-expanded", isOpen);
       mobileNav.setAttribute("aria-hidden", !isOpen);
     });
-  }
 
-  /* --- Products dropdown (click for keyboard/touch users) --- */
-  document.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      const menu = this.nextElementSibling;
-      const isOpen = menu.classList.toggle("is-open");
-      this.setAttribute("aria-expanded", isOpen);
-    });
-  });
-
-  /* --- Close dropdown when clicking outside --- */
-  document.addEventListener("click", function (e) {
-    if (!e.target.closest(".dropdown")) {
-      document.querySelectorAll(".dropdown__menu").forEach(function (menu) {
-        menu.classList.remove("is-open");
-      });
-      document.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
-        btn.setAttribute("aria-expanded", "false");
-      });
-    }
-  });
-
-  /* --- Close mobile menu when a link is tapped --- */
-  if (mobileNav) {
+    /* Close when any nav link is tapped */
     mobileNav.querySelectorAll("a").forEach(function (link) {
       link.addEventListener("click", function () {
         mobileNav.classList.remove("is-open");
@@ -51,41 +45,63 @@
       });
     });
   }
+
+  /* Products dropdown (keyboard / touch users) */
+  document.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var menu = this.nextElementSibling;
+      var isOpen = menu.classList.toggle("is-open");
+      this.setAttribute("aria-expanded", isOpen);
+    });
+  });
+
+  /* Close all dropdowns on outside click */
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".dropdown")) {
+      document.querySelectorAll(".dropdown__menu").forEach(function (m) {
+        m.classList.remove("is-open");
+      });
+      document.querySelectorAll(".dropdown__trigger").forEach(function (b) {
+        b.setAttribute("aria-expanded", "false");
+      });
+    }
+  });
 })();
 
-/* =============================================
-   PRODUCT IMAGE GALLERY / CAROUSEL
-   – prev/next arrows + thumbnail click
-============================================= */
+/* =============================================================
+   2. GALLERY CAROUSEL
+   Prev/next arrows, thumbnail clicks, touch swipe
+============================================================= */
 (function () {
   "use strict";
 
-  const track = document.getElementById("galleryTrack");
-  const prevBtn = document.getElementById("galleryPrev");
-  const nextBtn = document.getElementById("galleryNext");
-  const thumbsWrap = document.getElementById("galleryThumbs");
+  var track = document.getElementById("galleryTrack");
+  var prevBtn = document.getElementById("galleryPrev");
+  var nextBtn = document.getElementById("galleryNext");
+  var thumbsWrap = document.getElementById("galleryThumbs");
 
-  if (!track) return; // not on product page
+  if (!track) return;
 
-  const slides = track.querySelectorAll(".gallery__slide");
-  const thumbs = thumbsWrap
-    ? thumbsWrap.querySelectorAll(".gallery__thumb")
-    : [];
-  const total = slides.length;
-  let current = 0;
+  var slides = track.querySelectorAll(".gallery__slide");
+  var thumbs = thumbsWrap ? thumbsWrap.querySelectorAll(".gallery__thumb") : [];
+  var total = slides.length;
+  var current = 0;
 
-  /* Move to a given slide index */
+  /* Initialise the global so the zoom module always has a valid value */
+  window.__galleryCurrentSlide = 0;
+
   function goTo(index) {
     current = (index + total) % total;
     track.style.transform = "translateX(-" + current * 100 + "%)";
 
-    /* Update active thumbnail */
+    /* Keep global in sync — zoom module reads this as a fallback */
+    window.__galleryCurrentSlide = current;
+
     thumbs.forEach(function (t, i) {
       t.classList.toggle("is-active", i === current);
     });
   }
 
-  /* Arrow buttons */
   if (prevBtn)
     prevBtn.addEventListener("click", function () {
       goTo(current - 1);
@@ -95,14 +111,13 @@
       goTo(current + 1);
     });
 
-  /* Thumbnail clicks */
   thumbs.forEach(function (thumb) {
     thumb.addEventListener("click", function () {
       goTo(parseInt(this.dataset.index, 10));
     });
   });
 
-  /* Touch / swipe support on main image */
+  /* Touch swipe */
   var touchStartX = 0;
   track.addEventListener(
     "touchstart",
@@ -124,1221 +139,100 @@
   );
 })();
 
-/* =============================================
-   APPLICATIONS CAROUSEL
-   – prev/next buttons + drag/swipe to scroll
-============================================= */
+/* =============================================================
+   3. GALLERY IMAGE ZOOM  — FIXED
+   
+   Bug that was present:
+     The zoom preview always showed the first image because
+     getActiveImg() tried to use window.__galleryCurrentSlide
+     which could be undefined on page load (before any goTo call),
+     and the sticky-header syncThumb was trying to parse a px value
+     from a transform that actually uses percentage units.
+
+   Fix:
+     • Derive the active slide index directly from the track's
+       CSS transform string (translateX(-N * 100%)), which is the
+       single source of truth set by goTo() in Section 2.
+     • window.__galleryCurrentSlide is now also initialised to 0
+       in Section 2 and used only as a secondary fallback here.
+============================================================= */
 (function () {
   "use strict";
 
-  const track = document.getElementById("appsTrack");
-  const prevBtn = document.getElementById("appsPrev");
-  const nextBtn = document.getElementById("appsNext");
-
-  if (!track) return;
-
-  const CARD_WIDTH = () => {
-    const card = track.querySelector(".apps__card");
-    if (!card) return 360;
-    const gap = 20; // 1.25rem gap
-    return card.offsetWidth + gap;
-  };
-
-  let offset = 0;
-
-  function clampOffset(val) {
-    const maxScroll = track.scrollWidth - track.parentElement.offsetWidth;
-    return Math.max(0, Math.min(val, maxScroll));
-  }
-
-  function moveTo(val, animate) {
-    offset = clampOffset(val);
-    track.style.transition = animate
-      ? "transform 0.45s cubic-bezier(.16,1,.3,1)"
-      : "none";
-    track.style.transform = "translateX(-" + offset + "px)";
-  }
-
-  if (prevBtn)
-    prevBtn.addEventListener("click", function () {
-      moveTo(offset - CARD_WIDTH(), true);
-    });
-  if (nextBtn)
-    nextBtn.addEventListener("click", function () {
-      moveTo(offset + CARD_WIDTH(), true);
-    });
-
-  /* ── Drag to scroll (mouse) ── */
-  var isDragging = false,
-    startX = 0,
-    startOffset = 0;
-
-  track.addEventListener("mousedown", function (e) {
-    isDragging = true;
-    startX = e.clientX;
-    startOffset = offset;
-    track.style.transition = "none";
-  });
-
-  window.addEventListener("mousemove", function (e) {
-    if (!isDragging) return;
-    moveTo(startOffset - (e.clientX - startX), false);
-  });
-
-  window.addEventListener("mouseup", function () {
-    isDragging = false;
-  });
-
-  /* ── Touch swipe ── */
-  var touchStartX = 0,
-    touchStartOffset = 0;
-
-  track.addEventListener(
-    "touchstart",
-    function (e) {
-      touchStartX = e.touches[0].clientX;
-      touchStartOffset = offset;
-      track.style.transition = "none";
-    },
-    { passive: true },
-  );
-
-  track.addEventListener(
-    "touchmove",
-    function (e) {
-      moveTo(touchStartOffset - (e.touches[0].clientX - touchStartX), false);
-    },
-    { passive: true },
-  );
-
-  track.addEventListener(
-    "touchend",
-    function (e) {
-      var delta = e.changedTouches[0].clientX - touchStartX;
-      /* Snap to nearest card after swipe */
-      if (Math.abs(delta) > 40) {
-        moveTo(delta < 0 ? offset + CARD_WIDTH() : offset - CARD_WIDTH(), true);
-      }
-    },
-    { passive: true },
-  );
-})();
-
-/* =============================================
-   MANUFACTURING PROCESS – TAB SWITCHER
-   Clicking a tab shows the matching panel
-============================================= */
-(function () {
-  "use strict";
-
-  const tabs = document.querySelectorAll(".process__tab");
-  const panels = document.querySelectorAll(".process__panel");
-
-  if (!tabs.length) return;
-
-  function activateStep(index) {
-    /* Update tabs */
-    tabs.forEach(function (t, i) {
-      t.classList.toggle("is-active", i === index);
-      t.setAttribute("aria-selected", i === index ? "true" : "false");
-    });
-
-    /* Update panels */
-    panels.forEach(function (p, i) {
-      p.classList.toggle("is-active", i === index);
-    });
-
-    /* Scroll the active tab into view inside the scrollable row */
-    if (tabs[index]) {
-      tabs[index].scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
-    }
-  }
-
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      activateStep(parseInt(this.dataset.step, 10));
-    });
-  });
-})();
-
-/* =============================================
-   TESTIMONIALS CAROUSEL
-   – auto-scrolling, pauses on hover/drag, loops seamlessly
-============================================= */
-(function () {
-  "use strict";
-
-  var outer = document.querySelector(".testimonials__outer");
-  var track = document.querySelector(".testimonials__track");
-  if (!track || !outer) return;
-
-  var SPEED = 0.6; /* px per animation frame — adjust for faster/slower */
-  var offset = 0;
-  var isPaused = false;
-  var isDragging = false;
-  var startX = 0;
-  var startOffset = 0;
-  var rafId = null;
-
-  /* Clone all cards for seamless infinite loop */
-  var cards = Array.from(track.children);
-  cards.forEach(function (card) {
-    var clone = card.cloneNode(true);
-    clone.setAttribute("aria-hidden", "true");
-    track.appendChild(clone);
-  });
-
-  function getMaxLoop() {
-    /* Scroll only through the original set, then reset */
-    return track.scrollWidth / 2;
-  }
-
-  function autoScroll() {
-    if (!isPaused && !isDragging) {
-      offset += SPEED;
-      if (offset >= getMaxLoop()) {
-        offset -= getMaxLoop(); /* seamless jump back */
-      }
-      track.style.transform = "translateX(-" + offset + "px)";
-    }
-    rafId = requestAnimationFrame(autoScroll);
-  }
-
-  /* Pause on hover */
-  outer.addEventListener("mouseenter", function () {
-    isPaused = true;
-  });
-  outer.addEventListener("mouseleave", function () {
-    isPaused = false;
-  });
-
-  /* Pause on touch */
-  outer.addEventListener(
-    "touchstart",
-    function () {
-      isPaused = true;
-    },
-    { passive: true },
-  );
-  outer.addEventListener(
-    "touchend",
-    function () {
-      isPaused = false;
-    },
-    { passive: true },
-  );
-
-  /* Drag to manually scroll, then resume auto */
-  track.addEventListener("mousedown", function (e) {
-    isDragging = true;
-    isPaused = true;
-    startX = e.clientX;
-    startOffset = offset;
-    track.style.transition = "none";
-    track.style.cursor = "grabbing";
-  });
-
-  window.addEventListener("mousemove", function (e) {
-    if (!isDragging) return;
-    var delta = startX - e.clientX;
-    offset = startOffset + delta;
-    /* Wrap offset within loop range */
-    var max = getMaxLoop();
-    if (offset < 0) offset += max;
-    if (offset >= max) offset -= max;
-    track.style.transform = "translateX(-" + offset + "px)";
-  });
-
-  window.addEventListener("mouseup", function () {
-    if (!isDragging) return;
-    isDragging = false;
-    isPaused = false;
-    track.style.cursor = "grab";
-  });
-
-  /* Remove fixed width so track can grow with cloned cards */
-  track.style.width = "max-content";
-
-  /* Kick off */
-  rafId = requestAnimationFrame(autoScroll);
-})();
-
-/* =============================================
-   MODAL SYSTEM
-   Modal 1 (Catalogue)  → "Download Full Technical Datasheet"
-   Modal 2 (Call Back)  → "Request a Quote" / "Get Custom Quote"
-============================================= */
-(function () {
-  "use strict";
-
-  /* ── Helpers ── */
-  function openModal(id) {
-    var overlay = document.getElementById(id);
-    if (!overlay) return;
-    overlay.removeAttribute("hidden");
-    document.body.classList.add("modal-open");
-    /* Trigger CSS transition on next frame */
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        overlay.classList.add("is-open");
-      });
-    });
-    /* Focus first input */
-    var firstInput = overlay.querySelector("input");
-    if (firstInput)
-      setTimeout(function () {
-        firstInput.focus();
-      }, 250);
-  }
-
-  function closeModal(id) {
-    var overlay = document.getElementById(id);
-    if (!overlay) return;
-    overlay.classList.remove("is-open");
-    document.body.classList.remove("modal-open");
-    setTimeout(function () {
-      overlay.setAttribute("hidden", "");
-    }, 200);
-  }
-
-  /* ── Open triggers ── */
-
-  /* "Download Full Technical Datasheet" button → Catalogue modal */
-  document.querySelectorAll(".btn-download").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      openModal("modalCatalogue");
-    });
-  });
-
-  /* "Request a Quote" / "Get Custom Quote" / "Request Catalogue" buttons → Call-back modal */
-  document
-    .querySelectorAll(
-      ".btn-request-quote, .btn-primary-cta, .btn-catalogue, .btn-request-cta",
-    )
-    .forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        openModal("modalCallBack");
-      });
-    });
-
-  /* ── Close triggers ── */
-
-  /* × buttons */
-  document.querySelectorAll(".modal__close").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      closeModal(this.dataset.close);
-    });
-  });
-
-  /* Click on overlay backdrop */
-  document.querySelectorAll(".modal-overlay").forEach(function (overlay) {
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) closeModal(overlay.id);
-    });
-  });
-
-  /* Escape key */
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      document
-        .querySelectorAll(".modal-overlay.is-open")
-        .forEach(function (overlay) {
-          closeModal(overlay.id);
-        });
-    }
-  });
-})();
-
-/* =============================================
-   STICKY HEADER
-   Shows after scrolling past first fold (100vh).
-   Hides when scrolling back up toward the top.
-============================================= */
-(function () {
-  "use strict";
-
-  var stickyHeader = document.getElementById("stickyHeader");
-  var stickyHamburg = document.getElementById("stickyHamburger");
-  var mobileNav = document.getElementById("mobileNav");
-
-  if (!stickyHeader) return;
-
-  var lastScrollY = 0;
-  var firstFold = window.innerHeight; /* 100vh threshold */
-  var ticking = false;
-
-  function updateHeader() {
-    var currentY = window.scrollY || window.pageYOffset;
-    var scrollingDown = currentY > lastScrollY;
-
-    /* Only show after user has scrolled past the first fold */
-    if (currentY > firstFold && scrollingDown) {
-      /* Scrolling down past fold — show sticky header */
-      stickyHeader.classList.add("is-visible");
-      stickyHeader.setAttribute("aria-hidden", "false");
-    } else if (!scrollingDown || currentY <= firstFold) {
-      /* Scrolling up OR back near the top — hide sticky header */
-      stickyHeader.classList.remove("is-visible");
-      stickyHeader.setAttribute("aria-hidden", "true");
-    }
-
-    lastScrollY = currentY;
-    ticking = false;
-  }
-
-  window.addEventListener(
-    "scroll",
-    function () {
-      /* Throttle with requestAnimationFrame */
-      if (!ticking) {
-        requestAnimationFrame(updateHeader);
-        ticking = true;
-      }
-    },
-    { passive: true },
-  );
-
-  /* Recalculate first-fold threshold on resize */
-  window.addEventListener(
-    "resize",
-    function () {
-      firstFold = window.innerHeight;
-    },
-    { passive: true },
-  );
-
-  /* Sticky hamburger opens the same mobileNav panel */
-  if (stickyHamburg && mobileNav) {
-    stickyHamburg.addEventListener("click", function () {
-      var isOpen = mobileNav.classList.toggle("is-open");
-      stickyHamburg.classList.toggle("is-open", isOpen);
-      stickyHamburg.setAttribute("aria-expanded", isOpen);
-      mobileNav.setAttribute("aria-hidden", !isOpen);
-    });
-  }
-
-  /* Sticky header dropdowns — reuse same logic */
-  stickyHeader.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var menu = this.nextElementSibling;
-      var isOpen = menu.classList.toggle("is-open");
-      this.setAttribute("aria-expanded", isOpen);
-    });
-  });
-})();
-
-/* =============================================
-   PROCESS SECTION — MOBILE PREV/NEXT + BADGE
-============================================= */
-(function () {
-  "use strict";
-
-  var tabs = document.querySelectorAll(".process__tab");
-  var panels = document.querySelectorAll(".process__panel");
-  var badge = document.getElementById("processMobileBadge");
-  var prevBtn = document.getElementById("processPrev");
-  var nextBtn = document.getElementById("processNext");
-  var total = tabs.length;
-
-  if (!prevBtn || !nextBtn || !badge) return;
-
-  var stepNames = Array.from(tabs).map(function (t) {
-    return t.textContent.trim();
-  });
-
-  function updateBadge(index) {
-    badge.textContent =
-      "Step " + (index + 1) + "/" + total + ": " + stepNames[index];
-  }
-
-  function getCurrentStep() {
-    for (var i = 0; i < panels.length; i++) {
-      if (panels[i].classList.contains("is-active")) return i;
-    }
-    return 0;
-  }
-
-  function goToStep(index) {
-    /* Reuse the existing tab activateStep logic */
-    tabs.forEach(function (t, i) {
-      t.classList.toggle("is-active", i === index);
-      t.setAttribute("aria-selected", i === index ? "true" : "false");
-    });
-    panels.forEach(function (p, i) {
-      p.classList.toggle("is-active", i === index);
-    });
-    updateBadge(index);
-    /* Update disabled state */
-    prevBtn.disabled = index === 0;
-    nextBtn.disabled = index === total - 1;
-  }
-
-  prevBtn.addEventListener("click", function () {
-    var cur = getCurrentStep();
-    if (cur > 0) goToStep(cur - 1);
-  });
-
-  nextBtn.addEventListener("click", function () {
-    var cur = getCurrentStep();
-    if (cur < total - 1) goToStep(cur + 1);
-  });
-
-  /* Keep badge in sync when desktop tabs are clicked */
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      var idx = parseInt(this.dataset.step, 10);
-      updateBadge(idx);
-      prevBtn.disabled = idx === 0;
-      nextBtn.disabled = idx === total - 1;
-    });
-  });
-
-  /* Init */
-  updateBadge(0);
-  prevBtn.disabled = true;
-})();
-
-/* =============================================
-   PROCESS PANEL — IMAGE MINI CAROUSEL
-   Each panel-image div has prev/next arrows + dots
-============================================= */
-(function () {
-  "use strict";
-
-  document
-    .querySelectorAll(".process__panel-image")
-    .forEach(function (container) {
-      var track = container.querySelector(".pimg__track");
-      var slides = container.querySelectorAll(".pimg__slide");
-      var dots = container.querySelectorAll(".pimg__dot");
-      var prev = container.querySelector(".process__img-arrow--prev");
-      var next = container.querySelector(".process__img-arrow--next");
-      var total = slides.length;
-      var current = 0;
-
-      if (!track || total === 0) return;
-
-      function goTo(idx) {
-        current = (idx + total) % total;
-        track.style.transform = "translateX(-" + current * 100 + "%)";
-        dots.forEach(function (d, i) {
-          d.classList.toggle("is-active", i === current);
-        });
-        /* Disable arrows at ends (optional — loops by default) */
-      }
-
-      if (prev)
-        prev.addEventListener("click", function () {
-          goTo(current - 1);
-        });
-      if (next)
-        next.addEventListener("click", function () {
-          goTo(current + 1);
-        });
-
-      dots.forEach(function (dot) {
-        dot.addEventListener("click", function () {
-          goTo(parseInt(this.dataset.slide, 10));
-        });
-      });
-    });
-})();
-
-/* =============================================
-   PRODUCT IMAGE GALLERY / CAROUSEL
-   – prev/next arrows + thumbnail click
-============================================= */
-(function () {
-  "use strict";
-
-  const track = document.getElementById("galleryTrack");
-  const prevBtn = document.getElementById("galleryPrev");
-  const nextBtn = document.getElementById("galleryNext");
-  const thumbsWrap = document.getElementById("galleryThumbs");
-
-  if (!track) return; // not on product page
-
-  const slides = track.querySelectorAll(".gallery__slide");
-  const thumbs = thumbsWrap
-    ? thumbsWrap.querySelectorAll(".gallery__thumb")
-    : [];
-  const total = slides.length;
-  let current = 0;
-
-  /* Move to a given slide index */
-  function goTo(index) {
-    current = (index + total) % total;
-    track.style.transform = "translateX(-" + current * 100 + "%)";
-
-    /* Update active thumbnail */
-    thumbs.forEach(function (t, i) {
-      t.classList.toggle("is-active", i === current);
-    });
-  }
-
-  /* Arrow buttons */
-  if (prevBtn)
-    prevBtn.addEventListener("click", function () {
-      goTo(current - 1);
-    });
-  if (nextBtn)
-    nextBtn.addEventListener("click", function () {
-      goTo(current + 1);
-    });
-
-  /* Thumbnail clicks */
-  thumbs.forEach(function (thumb) {
-    thumb.addEventListener("click", function () {
-      goTo(parseInt(this.dataset.index, 10));
-    });
-  });
-
-  /* Touch / swipe support on main image */
-  var touchStartX = 0;
-  track.addEventListener(
-    "touchstart",
-    function (e) {
-      touchStartX = e.touches[0].clientX;
-    },
-    { passive: true },
-  );
-
-  track.addEventListener(
-    "touchend",
-    function (e) {
-      var delta = e.changedTouches[0].clientX - touchStartX;
-      if (Math.abs(delta) > 40) {
-        delta < 0 ? goTo(current + 1) : goTo(current - 1);
-      }
-    },
-    { passive: true },
-  );
-})();
-
-/* =============================================
-   FAQ ACCORDION
-   – clicking a question opens it and closes others
-============================================= */
-(function () {
-  "use strict";
-
-  const faqItems = document.querySelectorAll(".faq__item");
-  if (!faqItems.length) return;
-
-  faqItems.forEach(function (item) {
-    const btn = item.querySelector(".faq__question");
-    if (!btn) return;
-
-    btn.addEventListener("click", function () {
-      // ✅ Capture BEFORE the loop mutates anything
-      const isOpen = item.classList.contains("is-open");
-
-      // Close ALL items including this one
-      faqItems.forEach(function (el) {
-        el.classList.remove("is-open");
-        const q = el.querySelector(".faq__question");
-        if (q) q.setAttribute("aria-expanded", "false");
-      });
-
-      // Only reopen if it was closed before the click
-      if (!isOpen) {
-        item.classList.add("is-open");
-        btn.setAttribute("aria-expanded", "true");
-      }
-    });
-  });
-})();
-
-/* =============================================
-   APPLICATIONS CAROUSEL
-   – prev/next buttons + drag/swipe to scroll
-============================================= */
-(function () {
-  "use strict";
-
-  const track = document.getElementById("appsTrack");
-  const prevBtn = document.getElementById("appsPrev");
-  const nextBtn = document.getElementById("appsNext");
-
-  if (!track) return;
-
-  const CARD_WIDTH = () => {
-    const card = track.querySelector(".apps__card");
-    if (!card) return 360;
-    const gap = 20; // 1.25rem gap
-    return card.offsetWidth + gap;
-  };
-
-  let offset = 0;
-
-  function clampOffset(val) {
-    const maxScroll = track.scrollWidth - track.parentElement.offsetWidth;
-    return Math.max(0, Math.min(val, maxScroll));
-  }
-
-  function moveTo(val, animate) {
-    offset = clampOffset(val);
-    track.style.transition = animate
-      ? "transform 0.45s cubic-bezier(.16,1,.3,1)"
-      : "none";
-    track.style.transform = "translateX(-" + offset + "px)";
-  }
-
-  if (prevBtn)
-    prevBtn.addEventListener("click", function () {
-      moveTo(offset - CARD_WIDTH(), true);
-    });
-  if (nextBtn)
-    nextBtn.addEventListener("click", function () {
-      moveTo(offset + CARD_WIDTH(), true);
-    });
-
-  /* ── Drag to scroll (mouse) ── */
-  var isDragging = false,
-    startX = 0,
-    startOffset = 0;
-
-  track.addEventListener("mousedown", function (e) {
-    isDragging = true;
-    startX = e.clientX;
-    startOffset = offset;
-    track.style.transition = "none";
-  });
-
-  window.addEventListener("mousemove", function (e) {
-    if (!isDragging) return;
-    moveTo(startOffset - (e.clientX - startX), false);
-  });
-
-  window.addEventListener("mouseup", function () {
-    isDragging = false;
-  });
-
-  /* ── Touch swipe ── */
-  var touchStartX = 0,
-    touchStartOffset = 0;
-
-  track.addEventListener(
-    "touchstart",
-    function (e) {
-      touchStartX = e.touches[0].clientX;
-      touchStartOffset = offset;
-      track.style.transition = "none";
-    },
-    { passive: true },
-  );
-
-  track.addEventListener(
-    "touchmove",
-    function (e) {
-      moveTo(touchStartOffset - (e.touches[0].clientX - touchStartX), false);
-    },
-    { passive: true },
-  );
-
-  track.addEventListener(
-    "touchend",
-    function (e) {
-      var delta = e.changedTouches[0].clientX - touchStartX;
-      /* Snap to nearest card after swipe */
-      if (Math.abs(delta) > 40) {
-        moveTo(delta < 0 ? offset + CARD_WIDTH() : offset - CARD_WIDTH(), true);
-      }
-    },
-    { passive: true },
-  );
-})();
-
-/* =============================================
-   MANUFACTURING PROCESS – TAB SWITCHER
-   Clicking a tab shows the matching panel
-============================================= */
-(function () {
-  "use strict";
-
-  const tabs = document.querySelectorAll(".process__tab");
-  const panels = document.querySelectorAll(".process__panel");
-
-  if (!tabs.length) return;
-
-  function activateStep(index) {
-    /* Update tabs */
-    tabs.forEach(function (t, i) {
-      t.classList.toggle("is-active", i === index);
-      t.setAttribute("aria-selected", i === index ? "true" : "false");
-    });
-
-    /* Update panels */
-    panels.forEach(function (p, i) {
-      p.classList.toggle("is-active", i === index);
-    });
-
-    /* Scroll the active tab into view inside the scrollable row */
-    if (tabs[index]) {
-      tabs[index].scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
-    }
-  }
-
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      activateStep(parseInt(this.dataset.step, 10));
-    });
-  });
-})();
-
-/* =============================================
-   TESTIMONIALS CAROUSEL
-   – auto-scrolling, pauses on hover/drag, loops seamlessly
-============================================= */
-(function () {
-  "use strict";
-
-  var outer = document.querySelector(".testimonials__outer");
-  var track = document.querySelector(".testimonials__track");
-  if (!track || !outer) return;
-
-  var SPEED = 0.6; /* px per animation frame — adjust for faster/slower */
-  var offset = 0;
-  var isPaused = false;
-  var isDragging = false;
-  var startX = 0;
-  var startOffset = 0;
-  var rafId = null;
-
-  /* Clone all cards for seamless infinite loop */
-  var cards = Array.from(track.children);
-  cards.forEach(function (card) {
-    var clone = card.cloneNode(true);
-    clone.setAttribute("aria-hidden", "true");
-    track.appendChild(clone);
-  });
-
-  function getMaxLoop() {
-    /* Scroll only through the original set, then reset */
-    return track.scrollWidth / 2;
-  }
-
-  function autoScroll() {
-    if (!isPaused && !isDragging) {
-      offset += SPEED;
-      if (offset >= getMaxLoop()) {
-        offset -= getMaxLoop(); /* seamless jump back */
-      }
-      track.style.transform = "translateX(-" + offset + "px)";
-    }
-    rafId = requestAnimationFrame(autoScroll);
-  }
-
-  /* Pause on hover */
-  outer.addEventListener("mouseenter", function () {
-    isPaused = true;
-  });
-  outer.addEventListener("mouseleave", function () {
-    isPaused = false;
-  });
-
-  /* Pause on touch */
-  outer.addEventListener(
-    "touchstart",
-    function () {
-      isPaused = true;
-    },
-    { passive: true },
-  );
-  outer.addEventListener(
-    "touchend",
-    function () {
-      isPaused = false;
-    },
-    { passive: true },
-  );
-
-  /* Drag to manually scroll, then resume auto */
-  track.addEventListener("mousedown", function (e) {
-    isDragging = true;
-    isPaused = true;
-    startX = e.clientX;
-    startOffset = offset;
-    track.style.transition = "none";
-    track.style.cursor = "grabbing";
-  });
-
-  window.addEventListener("mousemove", function (e) {
-    if (!isDragging) return;
-    var delta = startX - e.clientX;
-    offset = startOffset + delta;
-    /* Wrap offset within loop range */
-    var max = getMaxLoop();
-    if (offset < 0) offset += max;
-    if (offset >= max) offset -= max;
-    track.style.transform = "translateX(-" + offset + "px)";
-  });
-
-  window.addEventListener("mouseup", function () {
-    if (!isDragging) return;
-    isDragging = false;
-    isPaused = false;
-    track.style.cursor = "grab";
-  });
-
-  /* Remove fixed width so track can grow with cloned cards */
-  track.style.width = "max-content";
-
-  /* Kick off */
-  rafId = requestAnimationFrame(autoScroll);
-})();
-
-/* =============================================
-   MODAL SYSTEM
-   Modal 1 (Catalogue)  → "Download Full Technical Datasheet"
-   Modal 2 (Call Back)  → "Request a Quote" / "Get Custom Quote"
-============================================= */
-(function () {
-  "use strict";
-
-  /* ── Helpers ── */
-  function openModal(id) {
-    var overlay = document.getElementById(id);
-    if (!overlay) return;
-    overlay.removeAttribute("hidden");
-    document.body.classList.add("modal-open");
-    /* Trigger CSS transition on next frame */
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        overlay.classList.add("is-open");
-      });
-    });
-    /* Focus first input */
-    var firstInput = overlay.querySelector("input");
-    if (firstInput)
-      setTimeout(function () {
-        firstInput.focus();
-      }, 250);
-  }
-
-  function closeModal(id) {
-    var overlay = document.getElementById(id);
-    if (!overlay) return;
-    overlay.classList.remove("is-open");
-    document.body.classList.remove("modal-open");
-    setTimeout(function () {
-      overlay.setAttribute("hidden", "");
-    }, 200);
-  }
-
-  /* ── Open triggers ── */
-
-  /* "Download Full Technical Datasheet" button → Catalogue modal */
-  document.querySelectorAll(".btn-download").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      openModal("modalCatalogue");
-    });
-  });
-
-  /* "Request a Quote" / "Get Custom Quote" / "Request Catalogue" buttons → Call-back modal */
-  document
-    .querySelectorAll(
-      ".btn-request-quote, .btn-primary-cta, .btn-catalogue, .btn-request-cta",
-    )
-    .forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        openModal("modalCallBack");
-      });
-    });
-
-  /* ── Close triggers ── */
-
-  /* × buttons */
-  document.querySelectorAll(".modal__close").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      closeModal(this.dataset.close);
-    });
-  });
-
-  /* Click on overlay backdrop */
-  document.querySelectorAll(".modal-overlay").forEach(function (overlay) {
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) closeModal(overlay.id);
-    });
-  });
-
-  /* Escape key */
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      document
-        .querySelectorAll(".modal-overlay.is-open")
-        .forEach(function (overlay) {
-          closeModal(overlay.id);
-        });
-    }
-  });
-})();
-
-/* =============================================
-   STICKY HEADER
-   Shows after scrolling past first fold (100vh).
-   Hides when scrolling back up toward the top.
-============================================= */
-(function () {
-  "use strict";
-
-  var stickyHeader = document.getElementById("stickyHeader");
-  var stickyHamburg = document.getElementById("stickyHamburger");
-  var mobileNav = document.getElementById("mobileNav");
-
-  if (!stickyHeader) return;
-
-  var lastScrollY = 0;
-  var firstFold = window.innerHeight; /* 100vh threshold */
-  var ticking = false;
-
-  function updateHeader() {
-    var currentY = window.scrollY || window.pageYOffset;
-    var scrollingDown = currentY > lastScrollY;
-
-    /* Only show after user has scrolled past the first fold */
-    if (currentY > firstFold && scrollingDown) {
-      /* Scrolling down past fold — show sticky header */
-      stickyHeader.classList.add("is-visible");
-      stickyHeader.setAttribute("aria-hidden", "false");
-    } else if (!scrollingDown || currentY <= firstFold) {
-      /* Scrolling up OR back near the top — hide sticky header */
-      stickyHeader.classList.remove("is-visible");
-      stickyHeader.setAttribute("aria-hidden", "true");
-    }
-
-    lastScrollY = currentY;
-    ticking = false;
-  }
-
-  window.addEventListener(
-    "scroll",
-    function () {
-      /* Throttle with requestAnimationFrame */
-      if (!ticking) {
-        requestAnimationFrame(updateHeader);
-        ticking = true;
-      }
-    },
-    { passive: true },
-  );
-
-  /* Recalculate first-fold threshold on resize */
-  window.addEventListener(
-    "resize",
-    function () {
-      firstFold = window.innerHeight;
-    },
-    { passive: true },
-  );
-
-  /* Sticky hamburger opens the same mobileNav panel */
-  if (stickyHamburg && mobileNav) {
-    stickyHamburg.addEventListener("click", function () {
-      var isOpen = mobileNav.classList.toggle("is-open");
-      stickyHamburg.classList.toggle("is-open", isOpen);
-      stickyHamburg.setAttribute("aria-expanded", isOpen);
-      mobileNav.setAttribute("aria-hidden", !isOpen);
-    });
-  }
-
-  /* Sticky header dropdowns — reuse same logic */
-  stickyHeader.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var menu = this.nextElementSibling;
-      var isOpen = menu.classList.toggle("is-open");
-      this.setAttribute("aria-expanded", isOpen);
-    });
-  });
-})();
-
-/* =============================================
-   PROCESS SECTION — MOBILE PREV/NEXT + BADGE
-============================================= */
-(function () {
-  "use strict";
-
-  var tabs = document.querySelectorAll(".process__tab");
-  var panels = document.querySelectorAll(".process__panel");
-  var badge = document.getElementById("processMobileBadge");
-  var prevBtn = document.getElementById("processPrev");
-  var nextBtn = document.getElementById("processNext");
-  var total = tabs.length;
-
-  if (!prevBtn || !nextBtn || !badge) return;
-
-  var stepNames = Array.from(tabs).map(function (t) {
-    return t.textContent.trim();
-  });
-
-  function updateBadge(index) {
-    badge.textContent =
-      "Step " + (index + 1) + "/" + total + ": " + stepNames[index];
-  }
-
-  function getCurrentStep() {
-    for (var i = 0; i < panels.length; i++) {
-      if (panels[i].classList.contains("is-active")) return i;
-    }
-    return 0;
-  }
-
-  function goToStep(index) {
-    /* Reuse the existing tab activateStep logic */
-    tabs.forEach(function (t, i) {
-      t.classList.toggle("is-active", i === index);
-      t.setAttribute("aria-selected", i === index ? "true" : "false");
-    });
-    panels.forEach(function (p, i) {
-      p.classList.toggle("is-active", i === index);
-    });
-    updateBadge(index);
-    /* Update disabled state */
-    prevBtn.disabled = index === 0;
-    nextBtn.disabled = index === total - 1;
-  }
-
-  prevBtn.addEventListener("click", function () {
-    var cur = getCurrentStep();
-    if (cur > 0) goToStep(cur - 1);
-  });
-
-  nextBtn.addEventListener("click", function () {
-    var cur = getCurrentStep();
-    if (cur < total - 1) goToStep(cur + 1);
-  });
-
-  /* Keep badge in sync when desktop tabs are clicked */
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      var idx = parseInt(this.dataset.step, 10);
-      updateBadge(idx);
-      prevBtn.disabled = idx === 0;
-      nextBtn.disabled = idx === total - 1;
-    });
-  });
-
-  /* Init */
-  updateBadge(0);
-  prevBtn.disabled = true;
-})();
-
-/* =============================================
-   PROCESS PANEL — IMAGE MINI CAROUSEL
-   Each panel-image div has prev/next arrows + dots
-============================================= */
-(function () {
-  "use strict";
-
-  document
-    .querySelectorAll(".process__panel-image")
-    .forEach(function (container) {
-      var track = container.querySelector(".pimg__track");
-      var slides = container.querySelectorAll(".pimg__slide");
-      var dots = container.querySelectorAll(".pimg__dot");
-      var prev = container.querySelector(".process__img-arrow--prev");
-      var next = container.querySelector(".process__img-arrow--next");
-      var total = slides.length;
-      var current = 0;
-
-      if (!track || total === 0) return;
-
-      function goTo(idx) {
-        current = (idx + total) % total;
-        track.style.transform = "translateX(-" + current * 100 + "%)";
-        dots.forEach(function (d, i) {
-          d.classList.toggle("is-active", i === current);
-        });
-        /* Disable arrows at ends (optional — loops by default) */
-      }
-
-      if (prev)
-        prev.addEventListener("click", function () {
-          goTo(current - 1);
-        });
-      if (next)
-        next.addEventListener("click", function () {
-          goTo(current + 1);
-        });
-
-      dots.forEach(function (dot) {
-        dot.addEventListener("click", function () {
-          goTo(parseInt(this.dataset.slide, 10));
-        });
-      });
-    });
-})();
-
-/* =============================================
-   GALLERY IMAGE ZOOM
-   Lens on image + zoomed preview to the right
-============================================= */
-(function () {
-  "use strict";
-
-  var galleryMain = document.getElementById("galleryMain");
-  var trackWrap = document.getElementById("galleryTrackWrap");
+  var wrap = document.getElementById("galleryTrackWrap");
   var lens = document.getElementById("galleryZoomLens");
   var preview = document.getElementById("galleryZoomPreview");
   var track = document.getElementById("galleryTrack");
 
-  if (!galleryMain || !lens || !preview || !track) return;
+  if (!wrap || !lens || !preview || !track) return;
 
   var ZOOM = 2.5;
-  var LENS_W = 120;
-  var LENS_H = 120;
+  var PW = 320; /* preview box width  — must match CSS */
+  var PH = 320; /* preview box height — must match CSS */
 
-  function getActiveImg() {
+  /* Capture all slide images once at init */
+  var slideImgs = Array.from(track.querySelectorAll(".gallery__slide img"));
+
+  /*
+   * Read active index from the track's transform.
+   * goTo() always writes:  track.style.transform = "translateX(-N*100%)"
+   * So we parse the percentage to recover N.
+   */
+  function getActiveIndex() {
     var transform = track.style.transform || "";
-    var match = transform.match(/translateX\(-?(\d+(?:\.\d+)?)px\)/);
-    var offset = match ? parseFloat(match[1]) : 0;
-    var slideW = (trackWrap || galleryMain).offsetWidth;
-    var index = Math.round(offset / slideW);
-    var slides = track.querySelectorAll(".gallery__slide img");
-    return slides[index] || slides[0];
+    // Matches both "translateX(-100%)" and "translateX(-0%)"
+    var match = transform.match(/translateX\(\s*-\s*(\d+(?:\.\d+)?)%\s*\)/);
+    if (match) {
+      return Math.round(parseFloat(match[1]) / 100);
+    }
+    // Secondary fallback: global set by goTo()
+    if (typeof window.__galleryCurrentSlide === "number") {
+      return window.__galleryCurrentSlide;
+    }
+    return 0;
   }
 
-  function showZoom(e) {
+  function getActiveImg() {
+    var idx = getActiveIndex();
+    return slideImgs[idx] || slideImgs[0];
+  }
+
+  function onMove(e) {
+    /* Don't show zoom when hovering arrow buttons */
+    if (e.target.closest(".gallery__arrow")) {
+      lens.style.display = "none";
+      preview.style.display = "none";
+      return;
+    }
+
     var img = getActiveImg();
-    if (!img || !img.naturalWidth) return;
+    if (!img || !img.src) return;
 
-    var rect = galleryMain.getBoundingClientRect();
-
-    /* Raw mouse position inside the image */
+    /* Bounds of the visible image area */
+    var rect = wrap.getBoundingClientRect();
     var x = e.clientX - rect.left;
     var y = e.clientY - rect.top;
 
-    /* Clamp so lens stays fully inside */
-    var lx = Math.max(LENS_W / 2, Math.min(x, rect.width - LENS_W / 2));
-    var ly = Math.max(LENS_H / 2, Math.min(y, rect.height - LENS_H / 2));
+    /* Clamp cursor inside image */
+    var cx = Math.max(0, Math.min(x, rect.width));
+    var cy = Math.max(0, Math.min(y, rect.height));
 
-    /* Move lens */
-    lens.style.left = lx + "px";
-    lens.style.top = ly + "px";
+    /* Position the lens — CSS translate(-50%,-50%) centres it on cursor */
+    lens.style.left = cx + "px";
+    lens.style.top = cy + "px";
     lens.style.display = "block";
 
-    /* What fraction of the image (0-1) is the lens centre pointing at */
-    var fx = lx / rect.width;
-    var fy = ly / rect.height;
+    /* Fraction (0–1) of the image the cursor is over */
+    var fx = cx / rect.width;
+    var fy = cy / rect.height;
 
-    /* Preview: image drawn at ZOOM× size, shifted so the hovered
-       point appears at the centre of the preview box */
-    var pw = preview.offsetWidth || 320;
-    var ph = preview.offsetHeight || 320;
+    /* Dimensions of the zoomed image */
     var bw = rect.width * ZOOM;
     var bh = rect.height * ZOOM;
 
-    /* background-position: shift so hovered point is centred in preview */
-    var bx = pw / 2 - fx * bw;
-    var by = ph / 2 - fy * bh;
+    /* Shift the background so the hovered point lands at the preview centre */
+    var bx = PW / 2 - fx * bw;
+    var by = PH / 2 - fy * bh;
 
     preview.style.backgroundImage = 'url("' + img.src + '")';
     preview.style.backgroundSize = bw + "px " + bh + "px";
@@ -1346,53 +240,49 @@
     preview.style.display = "block";
   }
 
-  function hideZoom() {
+  function onLeave() {
     lens.style.display = "none";
     preview.style.display = "none";
   }
 
-  /* Listen on galleryMain — lens is its direct child so no overflow clipping */
-  galleryMain.addEventListener("mousemove", showZoom);
-  galleryMain.addEventListener("mouseleave", hideZoom);
+  wrap.addEventListener("mousemove", onMove);
+  wrap.addEventListener("mouseleave", onLeave);
 })();
 
-/* =============================================
-   STICKY HEADER — SCROLL TRIGGER + THUMB SYNC
-   Shows after scrolling past first fold (100vh).
-   Desktop: shows nav. Mobile: shows product summary.
-   Disappears when scrolling back to top.
-============================================= */
+/* =============================================================
+   4. STICKY HEADER
+   Slides in above navbar after scrolling past first fold (100vh).
+   Hides immediately on any upward scroll.
+   Product-bar thumbnail syncs with the active gallery slide.
+============================================================= */
 (function () {
   "use strict";
 
   var stickyHeader = document.getElementById("stickyHeader");
-  var track = document.getElementById("galleryTrack");
+  var stickyHamburg = document.getElementById("stickyHamburger");
+  var mobileNav = document.getElementById("mobileNav");
+  var galleryTrack = document.getElementById("galleryTrack");
   var thumbImg = document.getElementById("psbarThumbSticky");
 
   if (!stickyHeader) return;
 
   var lastScrollY = 0;
+  var firstFold = window.innerHeight;
   var ticking = false;
-  var threshold = window.innerHeight; /* first fold = 100vh */
 
-  window.addEventListener("resize", function () {
-    threshold = window.innerHeight;
-  });
+  function updateHeader() {
+    var y = window.scrollY || window.pageYOffset;
+    var scrollingDown = y > lastScrollY;
 
-  function update() {
-    var scrollY = window.pageYOffset;
-
-    if (scrollY > threshold && scrollY > lastScrollY) {
-      /* Past fold AND scrolling down → show */
+    if (y > firstFold && scrollingDown) {
       stickyHeader.classList.add("is-visible");
-      stickyHeader.removeAttribute("aria-hidden");
-    } else if (scrollY < lastScrollY) {
-      /* Scrolling up (any position) → hide */
+      stickyHeader.setAttribute("aria-hidden", "false");
+    } else if (!scrollingDown) {
       stickyHeader.classList.remove("is-visible");
       stickyHeader.setAttribute("aria-hidden", "true");
     }
 
-    lastScrollY = scrollY;
+    lastScrollY = y;
     ticking = false;
   }
 
@@ -1400,30 +290,471 @@
     "scroll",
     function () {
       if (!ticking) {
-        requestAnimationFrame(update);
+        requestAnimationFrame(updateHeader);
         ticking = true;
       }
     },
     { passive: true },
   );
 
-  /* Sync thumbnail with active gallery slide */
-  function syncThumb() {
-    if (!thumbImg || !track) return;
-    var transform = track.style.transform || "";
-    var match = transform.match(/translateX\(-?(\d+(?:\.\d+)?)px\)/);
-    var offset = match ? parseFloat(match[1]) : 0;
-    var slideW = track.parentElement ? track.parentElement.offsetWidth : 0;
-    var index = slideW ? Math.round(offset / slideW) : 0;
-    var imgs = track.querySelectorAll(".gallery__slide img");
-    var active = imgs[index] || imgs[0];
-    if (active && active.src) thumbImg.src = active.src;
+  window.addEventListener(
+    "resize",
+    function () {
+      firstFold = window.innerHeight;
+    },
+    { passive: true },
+  );
+
+  /* Sticky hamburger opens the same mobileNav panel as main navbar */
+  if (stickyHamburg && mobileNav) {
+    stickyHamburg.addEventListener("click", function () {
+      var isOpen = mobileNav.classList.toggle("is-open");
+      stickyHamburg.classList.toggle("is-open", isOpen);
+      stickyHamburg.setAttribute("aria-expanded", isOpen);
+      mobileNav.setAttribute("aria-hidden", !isOpen);
+    });
   }
 
-  if (track) {
-    new MutationObserver(syncThumb).observe(track, {
+  /* Dropdowns inside sticky header */
+  stickyHeader.querySelectorAll(".dropdown__trigger").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var menu = this.nextElementSibling;
+      var isOpen = menu.classList.toggle("is-open");
+      this.setAttribute("aria-expanded", isOpen);
+    });
+  });
+
+  /*
+   * Sync product-bar thumbnail with the active gallery slide.
+   *
+   * FIXED: The old code tried to parse a px value from the transform,
+   * but goTo() writes percentage units ("translateX(-N*100%)"), so the
+   * regex never matched and offset was always 0 → always showed slide 0.
+   *
+   * Fix: parse the percentage exactly the same way Section 3 does.
+   */
+  if (galleryTrack && thumbImg) {
+    function syncThumb() {
+      var transform = galleryTrack.style.transform || "";
+      var match = transform.match(/translateX\(\s*-\s*(\d+(?:\.\d+)?)%\s*\)/);
+      var slideIndex = match ? Math.round(parseFloat(match[1]) / 100) : 0;
+      var imgs = galleryTrack.querySelectorAll(".gallery__slide img");
+      var active = imgs[slideIndex] || imgs[0];
+      if (active && active.src) thumbImg.src = active.src;
+    }
+
+    new MutationObserver(syncThumb).observe(galleryTrack, {
       attributes: true,
       attributeFilter: ["style"],
     });
   }
+})();
+
+/* =============================================================
+   5. FAQ ACCORDION
+   Clicking a question opens it and closes all others.
+============================================================= */
+(function () {
+  "use strict";
+
+  var faqItems = document.querySelectorAll(".faq__item");
+  if (!faqItems.length) return;
+
+  faqItems.forEach(function (item) {
+    var btn = item.querySelector(".faq__question");
+    var chevron = item.querySelector(".faq__chevron");
+    if (!btn) return;
+
+    btn.addEventListener("click", function () {
+      var isOpen = item.classList.contains("is-open");
+
+      /* Close all */
+      faqItems.forEach(function (el) {
+        el.classList.remove("is-open");
+        var q = el.querySelector(".faq__question");
+        var c = el.querySelector(".faq__chevron");
+        if (q) q.setAttribute("aria-expanded", "false");
+        if (c)
+          c.innerHTML =
+            '<polyline points="6 9 12 15 18 9"/>'; /* chevron down */
+      });
+
+      /* Re-open if it was closed */
+      if (!isOpen) {
+        item.classList.add("is-open");
+        btn.setAttribute("aria-expanded", "true");
+        if (chevron)
+          chevron.innerHTML =
+            '<polyline points="18 15 12 9 6 15"/>'; /* chevron up */
+      }
+    });
+  });
+})();
+
+/* =============================================================
+   6. APPLICATIONS CAROUSEL
+   Prev/next buttons + mouse drag + touch swipe.
+============================================================= */
+(function () {
+  "use strict";
+
+  var track = document.getElementById("appsTrack");
+  var prevBtn = document.getElementById("appsPrev");
+  var nextBtn = document.getElementById("appsNext");
+
+  if (!track) return;
+
+  var offset = 0;
+
+  function cardWidth() {
+    var card = track.querySelector(".apps__card");
+    return card ? card.offsetWidth + 20 : 360; /* 20px ≈ 1.25rem gap */
+  }
+
+  function clamp(val) {
+    return Math.max(
+      0,
+      Math.min(val, track.scrollWidth - track.parentElement.offsetWidth),
+    );
+  }
+
+  function moveTo(val, animate) {
+    offset = clamp(val);
+    track.style.transition = animate
+      ? "transform 0.45s cubic-bezier(.16,1,.3,1)"
+      : "none";
+    track.style.transform = "translateX(-" + offset + "px)";
+  }
+
+  if (prevBtn)
+    prevBtn.addEventListener("click", function () {
+      moveTo(offset - cardWidth(), true);
+    });
+  if (nextBtn)
+    nextBtn.addEventListener("click", function () {
+      moveTo(offset + cardWidth(), true);
+    });
+
+  /* Mouse drag */
+  var isDragging = false,
+    dragStartX = 0,
+    dragStartOffset = 0;
+
+  track.addEventListener("mousedown", function (e) {
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartOffset = offset;
+    track.style.transition = "none";
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (isDragging) moveTo(dragStartOffset - (e.clientX - dragStartX), false);
+  });
+  window.addEventListener("mouseup", function () {
+    isDragging = false;
+  });
+
+  /* Touch swipe */
+  var touchX = 0,
+    touchOffset = 0;
+
+  track.addEventListener(
+    "touchstart",
+    function (e) {
+      touchX = e.touches[0].clientX;
+      touchOffset = offset;
+      track.style.transition = "none";
+    },
+    { passive: true },
+  );
+
+  track.addEventListener(
+    "touchmove",
+    function (e) {
+      moveTo(touchOffset - (e.touches[0].clientX - touchX), false);
+    },
+    { passive: true },
+  );
+
+  track.addEventListener(
+    "touchend",
+    function (e) {
+      var delta = e.changedTouches[0].clientX - touchX;
+      if (Math.abs(delta) > 40) {
+        moveTo(delta < 0 ? offset + cardWidth() : offset - cardWidth(), true);
+      }
+    },
+    { passive: true },
+  );
+})();
+
+/* =============================================================
+   7. MANUFACTURING PROCESS
+   Desktop: tab switcher.
+   Mobile: prev/next buttons + step badge (tabs are hidden via CSS).
+============================================================= */
+(function () {
+  "use strict";
+
+  var tabs = document.querySelectorAll(".process__tab");
+  var panels = document.querySelectorAll(".process__panel");
+  var badge = document.getElementById("processMobileBadge");
+  var prevBtn = document.getElementById("processPrev");
+  var nextBtn = document.getElementById("processNext");
+  var total = tabs.length;
+
+  if (!total) return;
+
+  var stepNames = Array.from(tabs).map(function (t) {
+    return t.textContent.trim();
+  });
+
+  function activateStep(index) {
+    tabs.forEach(function (t, i) {
+      t.classList.toggle("is-active", i === index);
+      t.setAttribute("aria-selected", i === index ? "true" : "false");
+    });
+    panels.forEach(function (p, i) {
+      p.classList.toggle("is-active", i === index);
+    });
+    if (tabs[index]) {
+      tabs[index].scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    }
+    if (badge)
+      badge.textContent =
+        "Step " + (index + 1) + "/" + total + ": " + stepNames[index];
+    if (prevBtn) prevBtn.disabled = index === 0;
+    if (nextBtn) nextBtn.disabled = index === total - 1;
+  }
+
+  function getCurrentStep() {
+    for (var i = 0; i < panels.length; i++) {
+      if (panels[i].classList.contains("is-active")) return i;
+    }
+    return 0;
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      activateStep(parseInt(this.dataset.step, 10));
+    });
+  });
+
+  if (prevBtn)
+    prevBtn.addEventListener("click", function () {
+      var cur = getCurrentStep();
+      if (cur > 0) activateStep(cur - 1);
+    });
+  if (nextBtn)
+    nextBtn.addEventListener("click", function () {
+      var cur = getCurrentStep();
+      if (cur < total - 1) activateStep(cur + 1);
+    });
+
+  activateStep(0);
+})();
+
+/* =============================================================
+   8. PROCESS PANEL IMAGE CAROUSEL
+   Each panel has its own independent mini carousel.
+============================================================= */
+(function () {
+  "use strict";
+
+  document
+    .querySelectorAll(".process__panel-image")
+    .forEach(function (container) {
+      var track = container.querySelector(".pimg__track");
+      var slides = container.querySelectorAll(".pimg__slide");
+      var dots = container.querySelectorAll(".pimg__dot");
+      var prev = container.querySelector(".process__img-arrow--prev");
+      var next = container.querySelector(".process__img-arrow--next");
+      var total = slides.length;
+      var current = 0;
+
+      if (!track || total === 0) return;
+
+      function goTo(idx) {
+        current = (idx + total) % total;
+        track.style.transform = "translateX(-" + current * 100 + "%)";
+        dots.forEach(function (d, i) {
+          d.classList.toggle("is-active", i === current);
+        });
+      }
+
+      if (prev)
+        prev.addEventListener("click", function () {
+          goTo(current - 1);
+        });
+      if (next)
+        next.addEventListener("click", function () {
+          goTo(current + 1);
+        });
+
+      dots.forEach(function (dot) {
+        dot.addEventListener("click", function () {
+          goTo(parseInt(this.dataset.slide, 10));
+        });
+      });
+    });
+})();
+
+/* =============================================================
+   9. TESTIMONIALS CAROUSEL
+   Auto-scrolls at a constant speed with seamless looping.
+============================================================= */
+(function () {
+  "use strict";
+
+  var outer = document.querySelector(".testimonials__outer");
+  var track = document.querySelector(".testimonials__track");
+  if (!outer || !track) return;
+
+  var SPEED = 0.6;
+  var offset = 0;
+  var isPaused = false;
+  var isDragging = false;
+  var startX = 0;
+  var startOffset = 0;
+
+  /* Clone original cards for seamless loop */
+  Array.from(track.children).forEach(function (card) {
+    var clone = card.cloneNode(true);
+    clone.setAttribute("aria-hidden", "true");
+    track.appendChild(clone);
+  });
+  track.style.width = "max-content";
+
+  function maxLoop() {
+    return track.scrollWidth / 2;
+  }
+
+  function tick() {
+    if (!isPaused && !isDragging) {
+      offset += SPEED;
+      if (offset >= maxLoop()) offset -= maxLoop();
+      track.style.transform = "translateX(-" + offset + "px)";
+    }
+    requestAnimationFrame(tick);
+  }
+
+  outer.addEventListener("mouseenter", function () {
+    isPaused = true;
+  });
+  outer.addEventListener("mouseleave", function () {
+    isPaused = false;
+  });
+  outer.addEventListener(
+    "touchstart",
+    function () {
+      isPaused = true;
+    },
+    { passive: true },
+  );
+  outer.addEventListener(
+    "touchend",
+    function () {
+      isPaused = false;
+    },
+    { passive: true },
+  );
+
+  track.addEventListener("mousedown", function (e) {
+    isDragging = true;
+    isPaused = true;
+    startX = e.clientX;
+    startOffset = offset;
+    track.style.cursor = "grabbing";
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!isDragging) return;
+    offset = startOffset + (startX - e.clientX);
+    var max = maxLoop();
+    if (offset < 0) offset += max;
+    if (offset >= max) offset -= max;
+    track.style.transform = "translateX(-" + offset + "px)";
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!isDragging) return;
+    isDragging = false;
+    isPaused = false;
+    track.style.cursor = "grab";
+  });
+
+  requestAnimationFrame(tick);
+})();
+
+/* =============================================================
+  10. MODAL SYSTEM
+============================================================= */
+(function () {
+  "use strict";
+
+  function openModal(id) {
+    var overlay = document.getElementById(id);
+    if (!overlay) return;
+    overlay.removeAttribute("hidden");
+    document.body.classList.add("modal-open");
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        overlay.classList.add("is-open");
+      });
+    });
+    var first = overlay.querySelector("input");
+    if (first)
+      setTimeout(function () {
+        first.focus();
+      }, 250);
+  }
+
+  function closeModal(id) {
+    var overlay = document.getElementById(id);
+    if (!overlay) return;
+    overlay.classList.remove("is-open");
+    document.body.classList.remove("modal-open");
+    setTimeout(function () {
+      overlay.setAttribute("hidden", "");
+    }, 200);
+  }
+
+  document.querySelectorAll(".btn-download").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openModal("modalCatalogue");
+    });
+  });
+
+  document
+    .querySelectorAll(
+      ".btn-request-quote, .btn-primary-cta, .btn-catalogue, .btn-request-cta",
+    )
+    .forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        openModal("modalCallBack");
+      });
+    });
+
+  document.querySelectorAll(".modal__close").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      closeModal(this.dataset.close);
+    });
+  });
+
+  document.querySelectorAll(".modal-overlay").forEach(function (overlay) {
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) closeModal(overlay.id);
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      document.querySelectorAll(".modal-overlay.is-open").forEach(function (o) {
+        closeModal(o.id);
+      });
+    }
+  });
 })();
